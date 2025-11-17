@@ -26,18 +26,24 @@ export function WatchlistSection({ stocks, onRemoveStock, onAddStock }: Watchlis
       </div>
 
       {stocks.length === 0 ? (
-        <div className="text-center py-12 text-muted-foreground">
+        <div className="text-center py-12 text-muted-foreground animate-fade-in-up">
           <Bookmark className="w-12 h-12 mx-auto mb-4 opacity-20" />
           <p>Your watchlist is empty. Add stocks to get started.</p>
         </div>
       ) : (
         <div className="grid gap-6 md:grid-cols-2">
-          {stocks.map((stock) => (
-            <StockCard 
-              key={stock.ticker} 
-              stock={stock} 
-              onRemove={onRemoveStock}
-            />
+          {stocks.map((stock, index) => (
+            <div 
+              key={stock.ticker}
+              style={{
+                animation: `fade-in-up 0.5s ease-out ${index * 0.1}s backwards`
+              }}
+            >
+              <StockCard 
+                stock={stock} 
+                onRemove={onRemoveStock}
+              />
+            </div>
           ))}
         </div>
       )}
