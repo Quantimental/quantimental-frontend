@@ -80,7 +80,7 @@ export function SignalSummaryBar({
                 {marketMood.replace('_', ' ')}
               </p>
               <p className="text-xs text-muted-foreground">
-                Sentiment: {avgSentiment >= 0 ? '+' : ''}{avgSentiment.toFixed(2)}
+                Avg Sentiment: {avgSentiment.toFixed(0)}/100
               </p>
             </div>
           </div>

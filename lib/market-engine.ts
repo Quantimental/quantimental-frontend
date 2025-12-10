@@ -142,6 +142,89 @@ export function generateRecommendation(
 }
 
 /**
+ * Generate simple, beginner-friendly explanation combining technical and sentiment analysis
+ * Uses ML model analysis to create easy-to-understand messages
+ */
+export function generateSimpleExplanation(
+  technicalRating: number,
+  sentimentRating: number,
+  rsi: number,
+  price: number,
+  ma50: number,
+  sentimentScore: number,
+  mentions: number,
+  mentionVelocity: 'rising' | 'falling' | 'steady',
+  signal?: 'bullish' | 'bearish' | 'neutral'
+): string {
+  // Price position (simple)
+  const priceVsMa50 = price > ma50
+  const pricePercent = Math.abs((price - ma50) / ma50) * 100
+  
+  // RSI interpretation (simple and clear)
+  let rsiMessage = ''
+  if (rsi > 70) {
+    rsiMessage = 'may be overpriced - could drop soon'
+  } else if (rsi < 30) {
+    rsiMessage = 'may be underpriced - could bounce back'
+  } else {
+    rsiMessage = 'price is in a normal range - not too high or too low'
+  }
+  
+  // Sentiment interpretation (using ML model analysis)
+  let sentimentMessage = ''
+  if (sentimentScore > 0.6) {
+    if (mentions > 1000) {
+      sentimentMessage = 'lots of positive buzz online'
+    } else if (mentions > 100) {
+      sentimentMessage = 'positive discussions trending'
+    } else {
+      sentimentMessage = 'people feeling positive'
+    }
+  } else if (sentimentScore < -0.6) {
+    if (mentions > 1000) {
+      sentimentMessage = 'lots of negative buzz online'
+    } else if (mentions > 100) {
+      sentimentMessage = 'negative discussions trending'
+    } else {
+      sentimentMessage = 'people feeling cautious'
+    }
+  } else {
+    if (mentions > 100) {
+      sentimentMessage = 'mixed opinions online'
+    } else {
+      sentimentMessage = 'quiet sentiment - not much discussion'
+    }
+  }
+  
+  // Attention trend
+  let attentionMessage = ''
+  if (mentionVelocity === 'rising') {
+    attentionMessage = 'attention is growing'
+  } else if (mentionVelocity === 'falling') {
+    attentionMessage = 'attention is fading'
+  }
+  
+  // Combine into natural sentences
+  if (signal === 'bullish' && technicalRating > 65 && sentimentRating > 65) {
+    // Strong bullish: both technical and sentiment agree
+    return `Looking strong: ${priceVsMa50 ? 'price is above average' : 'price is recovering'}, ${rsiMessage}, and ${sentimentMessage}. ${attentionMessage ? attentionMessage + '.' : 'Good momentum.'}`
+  } else if (signal === 'bearish' && technicalRating < 35 && sentimentRating < 35) {
+    // Strong bearish: both agree
+    return `Looking weak: ${priceVsMa50 ? 'price is falling from highs' : 'price is below average'}, ${rsiMessage}, and ${sentimentMessage}. ${attentionMessage ? attentionMessage + '.' : 'Be cautious.'}`
+  } else if (Math.abs(technicalRating - sentimentRating) > 35) {
+    // Divergence: mixed signals
+    if (technicalRating > sentimentRating) {
+      return `Mixed signals: ${rsiMessage} but ${sentimentMessage}. Technical analysis suggests strength, but sentiment is cautious.`
+    } else {
+      return `Mixed signals: ${sentimentMessage} but ${rsiMessage}. People are ${sentimentScore > 0 ? 'excited' : 'worried'}, but price hasn't moved much yet.`
+    }
+  } else {
+    // Neutral/moderate
+    return `${priceVsMa50 ? 'Price is above average' : 'Price is below average'}, ${rsiMessage}, and ${sentimentMessage}. ${attentionMessage ? attentionMessage + '.' : 'Steady conditions.'}`
+  }
+}
+
+/**
  * Calculate global market mood from portfolio statistics
  */
 export function calculateMarketMood(
@@ -282,4 +365,5 @@ export function calculateSignalDistribution(
     total: stocks.length
   }
 }
+
 

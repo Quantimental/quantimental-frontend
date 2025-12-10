@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect, useCallback } from 'react'
 import { Header } from './header'
 import { TickerBanner } from './ticker-banner'
 import { StockCard } from './stock-card'
@@ -8,6 +8,7 @@ import { TrendingArticles } from './trending-articles'
 import { WatchlistSection } from './watchlist-section'
 import { MarketQuickGlance } from './market-quick-glance'
 import { calculateHybridScore, generateRecommendation, calculateMarketMood, calculateSignalDistribution } from '@/lib/market-engine'
+import { ingestionService } from '@/lib/api-services'
 
 export type Stock = {
   ticker: string
@@ -196,15 +197,122 @@ function enrichStocks(stocks: Stock[]): Stock[] {
 }
 
 export function Dashboard() {
-  const [watchlist, setWatchlist] = useState<Stock[]>(enrichStocks(initialWatchlist))
+  // Local state for watchlist management.
+  // Start with enriched mock data so the dashboard renders immediately,
+  // then replace with real backend data when it arrives.
+  const [watchlist, setWatchlist] = useState<Stock[]>(() => enrichStocks(initialWatchlist))
+  const [loading, setLoading] = useState(false)
 
-  // Calculate market stats
+  // Fetch real LIVE data for all watchlist stocks
+  const fetchWatchlistData = useCallback(async (tickers: string[]) => {
+    if (tickers.length === 0) return
+    
+    try {
+      setLoading(true)
+      const data = await ingestionService.analyzeMultipleLight(tickers)
+
+        const mapped: Stock[] = data.signals.map(signal => {
+          // Convert sentiment_score (-1 to +1) to sentimentRating (0-100)
+          // If backend already provides sentiment_rating, use it; otherwise calculate from score
+          const sentimentScore = signal.sentiment_analysis.sentiment_score // -1 to +1
+          const sentimentRating = signal.sentiment_rating !== undefined 
+            ? signal.sentiment_rating 
+            : Math.round((sentimentScore + 1) * 50) // Convert -1..+1 to 0..100
+          
+          // Enrich with hybrid score and recommendation if not provided
+          const hybridScore = signal.hybrid_score || calculateHybridScore(
+            signal.technical_rating,
+            sentimentRating,
+            0.45,
+            0.55
+          ).score
+          
+          const recommendation = signal.recommendation || generateRecommendation(
+            hybridScore,
+            signal.technical_rating,
+            sentimentRating,
+            signal.signal,
+            signal.technical_analysis.rsi,
+            signal.sentiment_analysis.mentions,
+            signal.sentiment_analysis.mention_velocity as 'rising' | 'falling' | 'steady'
+          )
+          
+          return {
+            ticker: signal.ticker,
+            name: signal.company_name,
+            price: signal.technical_analysis.price,
+            change: 0,
+            changePercent: signal.technical_analysis.price_change_10d || 0,
+            technicalRating: signal.technical_rating,
+            sentimentRating: sentimentRating,
+            signal: signal.signal,
+            tagline: recommendation.reasons[0] || 'Market analysis available',
+            technicalDetails: {
+              rsi: signal.technical_analysis.rsi,
+              ma50: signal.technical_analysis.sma_50,
+              ma200: signal.technical_analysis.sma_200 || signal.technical_analysis.sma_50,
+            },
+            sentimentDetails: {
+              score: sentimentScore,
+              mentions: signal.sentiment_analysis.mentions,
+              velocity: signal.sentiment_analysis.mention_velocity,
+            },
+            hybridScore: hybridScore,
+            hybridWeights: { technical: 0.45, sentiment: 0.55 },
+            recommendation: recommendation,
+            signalAge: Date.now(),
+            lastUpdated: 'Just now',
+            priceHistory: [],
+          }
+        })
+
+        console.log('Dashboard watchlist data', mapped)
+        setWatchlist(mapped)
+      } catch (err) {
+        console.warn('Failed to fetch dashboard watchlist', err)
+      } finally {
+        setLoading(false)
+      }
+  }, [])
+
+  // Initial fetch for default watchlist - all 15 tickers
+  useEffect(() => {
+    const defaultTickers = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 'TSLA', 'META', 'JPM', 'V', 'JNJ', 'WMT', 'PG', 'DIS', 'NFLX', 'COIN']
+    fetchWatchlistData(defaultTickers)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Refresh watchlist data periodically (every 2 minutes)
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const currentTickers = watchlist.map(s => s.ticker)
+      if (currentTickers.length > 0) {
+        fetchWatchlistData(currentTickers)
+      }
+    }, 2 * 60 * 1000) // 2 minutes
+
+    return () => clearInterval(interval)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [watchlist])
+
+  // Calculate market stats (MUST be called before any conditional returns to maintain hook order)
   const marketStats = useMemo(() => {
+    // Return default values if no data yet
+    if (watchlist.length === 0) {
+      return {
+        distribution: { strongBuy: 0, buy: 0, hold: 0, sell: 0, strongSell: 0 },
+        moodData: { mood: 'neutral' as const, sentiment: 50, hypyVelocity: 0, fearGreedTilt: 0, vixLevel: 16 },
+        medianRsi: 50,
+        avgSentiment: 50,
+        vixLevel: 16
+      }
+    }
+
     const avgSentiment = watchlist.reduce((sum, s) => sum + s.sentimentRating, 0) / watchlist.length
     const bullishCount = watchlist.filter(s => s.signal === 'bullish').length
     const rsiValues = watchlist.map(s => s.technicalDetails.rsi).sort((a, b) => a - b)
     const medianRsi = rsiValues[Math.floor(rsiValues.length / 2)]
-    
+
     // Calculate avg velocity
     const velocityMap = { rising: 1, steady: 0, falling: -1 }
     const avgVelocity = watchlist.reduce((sum, s) => sum + velocityMap[s.sentimentDetails.velocity as 'rising' | 'falling' | 'steady'], 0) / watchlist.length
@@ -237,14 +345,101 @@ export function Dashboard() {
     }
   }, [watchlist])
 
+  // Show loading state (AFTER all hooks are called)
+  // Because we initialize with mock data, this is effectively a safeguard
+  // if the watchlist were ever empty while loading.
+  if (loading && watchlist.length === 0) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center space-y-4">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto"></div>
+          <p className="text-muted-foreground">Loading market data...</p>
+        </div>
+      </div>
+    )
+  }
+
   const handleRemoveFromWatchlist = (ticker: string) => {
     setWatchlist(watchlist.filter((stock) => stock.ticker !== ticker))
   }
 
-  const handleAddToWatchlist = (stock: Stock) => {
-    if (!watchlist.find(s => s.ticker === stock.ticker)) {
+  const handleAddToWatchlist = async (stock: Stock) => {
+    // Don't add if already in watchlist
+    if (watchlist.find(s => s.ticker === stock.ticker)) {
+      return
+    }
+
+    try {
+      // Fetch live data for the newly added stock
+      setLoading(true)
+      const data = await ingestionService.analyzeMultipleLight([stock.ticker])
+      
+      if (data.signals && data.signals.length > 0) {
+        const signal = data.signals[0]
+        const sentimentScore = signal.sentiment_analysis.sentiment_score
+        const sentimentRating = signal.sentiment_rating !== undefined 
+          ? signal.sentiment_rating 
+          : Math.round((sentimentScore + 1) * 50)
+        
+        const hybridScore = signal.hybrid_score || calculateHybridScore(
+          signal.technical_rating,
+          sentimentRating,
+          0.45,
+          0.55
+        ).score
+        
+        const recommendation = signal.recommendation || generateRecommendation(
+          hybridScore,
+          signal.technical_rating,
+          sentimentRating,
+          signal.signal,
+          signal.technical_analysis.rsi,
+          signal.sentiment_analysis.mentions,
+          signal.sentiment_analysis.mention_velocity as 'rising' | 'falling' | 'steady'
+        )
+        
+        const newStock: Stock = {
+          ticker: signal.ticker,
+          name: signal.company_name,
+          price: signal.technical_analysis.price,
+          change: 0,
+          changePercent: signal.technical_analysis.price_change_10d || 0,
+          technicalRating: signal.technical_rating,
+          sentimentRating: sentimentRating,
+          signal: signal.signal,
+          tagline: recommendation.reasons[0] || 'Market analysis available',
+          technicalDetails: {
+            rsi: signal.technical_analysis.rsi,
+            ma50: signal.technical_analysis.sma_50,
+            ma200: signal.technical_analysis.sma_200 || signal.technical_analysis.sma_50,
+          },
+          sentimentDetails: {
+            score: sentimentScore,
+            mentions: signal.sentiment_analysis.mentions,
+            velocity: signal.sentiment_analysis.mention_velocity,
+          },
+          hybridScore: hybridScore,
+          hybridWeights: { technical: 0.45, sentiment: 0.55 },
+          recommendation: recommendation,
+          signalAge: Date.now(),
+          lastUpdated: 'Just now',
+          priceHistory: [],
+        }
+        
+        setWatchlist([...watchlist, newStock])
+        console.log(`Fetched live data for ${stock.ticker}:`, newStock)
+      } else {
+        // Fallback to enriched mock if API fails
+        const enrichedStock = enrichStocks([stock])[0]
+        setWatchlist([...watchlist, enrichedStock])
+      }
+    } catch (err) {
+      console.warn(`Failed to fetch live data for ${stock.ticker}:`, err)
+      // Fallback to enriched mock if API fails
       const enrichedStock = enrichStocks([stock])[0]
       setWatchlist([...watchlist, enrichedStock])
+    } finally {
+      setLoading(false)
     }
   }
 
