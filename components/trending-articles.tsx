@@ -1,92 +1,143 @@
+'use client'
+
+import { useState, useEffect } from 'react'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Clock, TrendingUp, TrendingDown, BarChart3 } from 'lucide-react'
+import { Clock, TrendingUp, ExternalLink, Newspaper } from 'lucide-react'
+import { ingestionService } from '@/lib/api-services'
+import type { NewsArticle } from '@/lib/api-services'
 
 type Article = {
   id: string
   title: string
+  description?: string
   source: string
   time: string
-  sentiment: 'positive' | 'negative' | 'neutral'
-  tickers: string[]
-  // New fields for impact
-  impact: 'low' | 'medium' | 'high'
-  mentionCount: number
-  sentimentTrend: 'rising' | 'steady' | 'falling'
-  priceImpact?: Record<string, number> // ticker -> percentage change
+  url: string
+  imageUrl?: string
 }
 
-const articles: Article[] = [
-  {
-    id: '1',
-    title: 'Apple Reports Record Q4 Earnings, Beats Expectations',
-    source: 'Bloomberg',
-    time: '2h ago',
-    sentiment: 'positive',
-    tickers: ['AAPL'],
-    impact: 'high',
-    mentionCount: 2341,
-    sentimentTrend: 'rising',
-    priceImpact: { AAPL: 2.5 },
-  },
-  {
-    id: '2',
-    title: 'Tesla Faces Production Challenges in Shanghai Factory',
-    source: 'Reuters',
-    time: '4h ago',
-    sentiment: 'negative',
-    tickers: ['TSLA'],
-    impact: 'high',
-    mentionCount: 1876,
-    sentimentTrend: 'falling',
-    priceImpact: { TSLA: -3.2 },
-  },
-  {
-    id: '3',
-    title: 'Microsoft and Google Announce AI Partnership',
-    source: 'TechCrunch',
-    time: '6h ago',
-    sentiment: 'positive',
-    tickers: ['MSFT', 'GOOGL'],
-    impact: 'medium',
-    mentionCount: 945,
-    sentimentTrend: 'rising',
-    priceImpact: { MSFT: 1.8, GOOGL: 0.9 },
-  },
-  {
-    id: '4',
-    title: 'Tech Sector Shows Strong Momentum Amid Rate Optimism',
-    source: 'CNBC',
-    time: '8h ago',
-    sentiment: 'positive',
-    tickers: ['AAPL', 'MSFT', 'GOOGL'],
-    impact: 'medium',
-    mentionCount: 678,
-    sentimentTrend: 'steady',
-    priceImpact: { AAPL: 0.5, MSFT: 1.2, GOOGL: 0.3 },
-  },
-]
+function formatTimeAgo(publishedAt: string): string {
+  try {
+    const date = new Date(publishedAt)
+    const now = new Date()
+    const diffMs = now.getTime() - date.getTime()
+    const diffMins = Math.floor(diffMs / 60000)
+    const diffHours = Math.floor(diffMins / 60)
+    const diffDays = Math.floor(diffHours / 24)
+
+    if (diffMins < 60) return `${diffMins}m ago`
+    if (diffHours < 24) return `${diffHours}h ago`
+    if (diffDays < 7) return `${diffDays}d ago`
+    return date.toLocaleDateString()
+  } catch {
+    return 'Recently'
+  }
+}
 
 export function TrendingArticles() {
+  const [articles, setArticles] = useState<Article[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    async function fetchTrendingArticles() {
+      try {
+        setLoading(true)
+        setError(null)
+        const response = await ingestionService.getTrendingArticles()
+
+        const mapped = response.articles.map((article: NewsArticle, index: number) => ({
+          id: article.url || `article-${index}`,
+          title: article.title,
+          description: article.description,
+          source: article.source,
+          time: formatTimeAgo(article.published_at),
+          url: article.url,
+          imageUrl: article.image_url,
+        }))
+
+        setArticles(mapped)
+      } catch (err) {
+        console.error('Failed to fetch trending articles:', err)
+        setError(err instanceof Error ? err.message : 'Failed to load articles')
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchTrendingArticles()
+  }, [])
+
+  if (loading) {
+    return (
+      <section className="space-y-4">
+        <div className="flex items-center gap-2">
+          <TrendingUp className="w-5 h-5 text-accent" />
+          <h2 className="text-2xl font-bold">Trending Articles</h2>
+        </div>
+        <div className="grid gap-4 md:grid-cols-2">
+          {[1, 2, 3, 4].map((i) => (
+            <Card key={i} className="p-4 animate-pulse">
+              <div className="space-y-3">
+                <div className="h-4 bg-muted rounded w-3/4" />
+                <div className="h-3 bg-muted rounded w-1/2" />
+              </div>
+            </Card>
+          ))}
+        </div>
+      </section>
+    )
+  }
+
+  if (error) {
+    return (
+      <section className="space-y-4">
+        <div className="flex items-center gap-2">
+          <TrendingUp className="w-5 h-5 text-accent" />
+          <h2 className="text-2xl font-bold">Trending Articles</h2>
+        </div>
+        <Card className="p-6 text-center border-destructive/30">
+          <Newspaper className="w-12 h-12 mx-auto mb-2 text-muted-foreground" />
+          <p className="text-muted-foreground">{error}</p>
+        </Card>
+      </section>
+    )
+  }
+
+  if (articles.length === 0) {
+    return (
+      <section className="space-y-4">
+        <div className="flex items-center gap-2">
+          <TrendingUp className="w-5 h-5 text-accent" />
+          <h2 className="text-2xl font-bold">Trending Articles</h2>
+        </div>
+        <Card className="p-6 text-center">
+          <Newspaper className="w-12 h-12 mx-auto mb-2 text-muted-foreground" />
+          <p className="text-muted-foreground">No trending articles available</p>
+        </Card>
+      </section>
+    )
+  }
+
   return (
     <section className="space-y-4">
       <div className="flex items-center gap-2">
         <TrendingUp className="w-5 h-5 text-accent" />
         <h2 className="text-2xl font-bold">Trending Articles</h2>
       </div>
-      
-      <div className="grid gap-4 md:grid-cols-2">
-        {articles.map((article, index) => {
-          const impactColor = {
-            low: 'border-yellow-500/30 bg-yellow-500/5',
-            medium: 'border-blue-500/30 bg-blue-500/5',
-            high: 'border-success/30 bg-success/5',
-          }[article.impact]
 
-          return (
-            <Card 
-              key={article.id} 
-              className={`p-4 hover:shadow-lg transition-all cursor-pointer group border-l-4 animate-fade-in-up ${impactColor}`}
+      <div className="grid gap-4 md:grid-cols-2">
+        {articles.map((article, index) => (
+          <a
+            key={article.id}
+            href={article.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="block"
+          >
+            <Card
+              className="p-4 hover:shadow-lg transition-all cursor-pointer group border-l-4 border-blue-500/30 bg-blue-500/5 animate-fade-in-up"
               style={{
                 animation: `fade-in-up 0.5s ease-out ${index * 0.1}s backwards`
               }}
@@ -96,39 +147,16 @@ export function TrendingArticles() {
                   <h3 className="font-semibold leading-tight text-pretty group-hover:text-accent transition-colors">
                     {article.title}
                   </h3>
-                  <div className="flex gap-2 flex-shrink-0">
-                    {/* Sentiment Badge */}
-                    <Badge 
-                      variant="outline"
-                      className={
-                        article.sentiment === 'positive'
-                          ? 'bg-success/10 text-success border-success'
-                          : article.sentiment === 'negative'
-                          ? 'bg-destructive/10 text-destructive border-destructive'
-                          : 'bg-muted text-muted-foreground'
-                      }
-                    >
-                      {article.sentiment}
-                    </Badge>
-
-                    {/* Impact Badge */}
-                    <Badge 
-                      variant="secondary"
-                      className={
-                        article.impact === 'high'
-                          ? 'bg-success/20 text-success'
-                          : article.impact === 'medium'
-                          ? 'bg-blue-500/20 text-blue-500'
-                          : 'bg-yellow-500/20 text-yellow-500'
-                      }
-                    >
-                      <BarChart3 className="w-3 h-3 mr-1" />
-                      {article.impact}
-                    </Badge>
-                  </div>
+                  <ExternalLink className="w-4 h-4 flex-shrink-0 text-muted-foreground group-hover:text-accent transition-colors" />
                 </div>
-                
-                <div className="flex items-center justify-between text-sm">
+
+                {article.description && (
+                  <p className="text-sm text-muted-foreground line-clamp-2">
+                    {article.description}
+                  </p>
+                )}
+
+                <div className="flex items-center justify-between text-sm pt-2 border-t border-border/30">
                   <div className="flex items-center gap-4 text-muted-foreground">
                     <span className="font-medium">{article.source}</span>
                     <div className="flex items-center gap-1">
@@ -137,61 +165,10 @@ export function TrendingArticles() {
                     </div>
                   </div>
                 </div>
-
-                {/* Sentiment Trend & Mentions */}
-                <div className="flex items-center gap-4 pt-2 border-t border-border/30 text-xs text-muted-foreground">
-                  <div className="flex items-center gap-1">
-                    {article.sentimentTrend === 'rising' ? (
-                      <TrendingUp className="w-3 h-3 text-success" />
-                    ) : article.sentimentTrend === 'falling' ? (
-                      <TrendingDown className="w-3 h-3 text-destructive" />
-                    ) : (
-                      <span className="text-yellow-500">→</span>
-                    )}
-                    <span>
-                      {article.sentimentTrend === 'rising'
-                        ? 'Momentum rising'
-                        : article.sentimentTrend === 'falling'
-                        ? 'Momentum falling'
-                        : 'Steady'}
-                    </span>
-                  </div>
-                  <span>•</span>
-                  <span>{article.mentionCount.toLocaleString()} mentions</span>
-                </div>
-
-                {/* Price Impact */}
-                {article.priceImpact && (
-                  <div className="flex flex-wrap gap-2 pt-2">
-                    {article.tickers.map((ticker) => {
-                      const impact = article.priceImpact?.[ticker]
-                      return (
-                        <Badge 
-                          key={ticker} 
-                          variant="secondary" 
-                          className={`text-xs font-mono ${
-                            impact && impact > 0
-                              ? 'bg-success/20 text-success'
-                              : impact && impact < 0
-                              ? 'bg-destructive/20 text-destructive'
-                              : ''
-                          }`}
-                        >
-                          {ticker}
-                          {impact && (
-                            <span className="ml-1">
-                              {impact > 0 ? '+' : ''}{impact.toFixed(1)}%
-                            </span>
-                          )}
-                        </Badge>
-                      )
-                    })}
-                  </div>
-                )}
               </div>
             </Card>
-          )
-        })}
+          </a>
+        ))}
       </div>
     </section>
   )
