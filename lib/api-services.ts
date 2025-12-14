@@ -80,15 +80,20 @@ export interface AnalyzeMultipleResponse {
 }
 
 export interface NewsArticle {
+  id: number
   ticker: string | null
   title: string
-  description: string
+  description?: string
+  summary?: string
   url: string
   source: string
   published_at: string
   image_url?: string
   author?: string
   is_market_news?: boolean
+  sentiment?: 'bullish' | 'bearish' | 'neutral'
+  impact?: 'high' | 'medium' | 'low'
+  tickers?: string[]
 }
 
 export interface TrendingArticlesResponse {
@@ -103,6 +108,36 @@ export interface TickerNewsResponse {
   success: boolean
   total_articles: number
   processing_time_ms: number
+}
+
+export interface RedditPost {
+  title: string
+  url: string
+  selftext: string
+  score: number
+  num_comments: number
+  author: string
+  subreddit: string
+  created_utc: number
+  permalink: string
+  ticker?: string
+  source: string
+  sentiment_score?: number
+}
+
+export interface RedditPostsResponse {
+  ticker: string
+  posts: RedditPost[]
+  total: number
+  is_cached: boolean
+  success: boolean
+}
+
+export interface TrendingRedditResponse {
+  subreddit: string
+  posts: RedditPost[]
+  total: number
+  success: boolean
 }
 
 /**
@@ -159,6 +194,34 @@ export const ingestionService = {
     return api.post<TickerNewsResponse>(
       endpoints.ingestion.tickerNews(ticker.toUpperCase()),
       { limit }
+    )
+  },
+
+  /**
+   * Get Reddit posts for a specific ticker
+   * Uses 6-hour caching to minimize API calls
+   */
+  async getRedditPosts(
+    ticker: string,
+    limit: number = 10,
+    timeframe: 'hour' | 'day' | 'week' | 'month' | 'year' | 'all' = 'week'
+  ): Promise<RedditPostsResponse> {
+    return api.get<RedditPostsResponse>(
+      `/api/v1/ingestion/reddit/ticker/${ticker.toUpperCase()}?limit=${limit}&timeframe=${timeframe}`
+    )
+  },
+
+  /**
+   * Get trending posts from a specific subreddit
+   * Returns top posts without ticker filtering
+   */
+  async getTrendingRedditPosts(
+    subreddit: string = 'wallstreetbets',
+    limit: number = 25,
+    timeframe: 'hour' | 'day' | 'week' | 'month' | 'year' | 'all' = 'day'
+  ): Promise<TrendingRedditResponse> {
+    return api.get<TrendingRedditResponse>(
+      `/api/v1/ingestion/reddit/trending?subreddit=${subreddit}&limit=${limit}&timeframe=${timeframe}`
     )
   },
 }
