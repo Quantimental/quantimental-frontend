@@ -9,8 +9,8 @@
  * - Type-safe responses
  */
 
-const API_BASE_URL = process.env.API_URL || 'http://localhost:8000'
-const API_VERSION = process.env.API_VERSION || 'v1'
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+const API_VERSION = process.env.NEXT_PUBLIC_API_VERSION || 'v1'
 
 export class APIError extends Error {
   constructor(
